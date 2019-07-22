@@ -94,11 +94,14 @@ rental_data.loc[:, 'capgl_tax'] = rental_data['cap_gain'] * CG_TAX_RATE #Can onl
 rental_data.loc[:, 'after_tax_proceeds'] = rental_data['gross_sale_proceeds'] - rental_data['mort_balance'] - rental_data['capgl_tax'] 
 
 #Calculate IRR 
-def irr_calc():
+def irr_calc(df):
     for i in region_list:
-        initial_inv = df_region['Neighborhood_Zhvi_SingleFamilyResidence'].iloc[0] * -DOWN_PMT
-        np.irr
-        
+        df = rental_data[rental_data['RegionID'] == i]
+        initial_inv = df['Neighborhood_Zhvi_SingleFamilyResidence'].iloc[0] * -DOWN_PMT
+        cfs = df['net_cf']
+        cfs_sale = df['net_cf'] + df['after_tax_proceeds']
+        df['irr_cf_only'] = np.irr([initial_inv, cfs])
+        df['irr_cf_sale'] = np.irr([initial_inv, cfs_sale])
 
 
 #As described in observation one above. Let's begin by comparing each state to see if any signifcant differences occur amongst

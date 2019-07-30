@@ -10,6 +10,9 @@ from datetime import date
 #Load rental data
 rental_data = pd.read_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data Update.csv', parse_dates=['date'], infer_datetime_format=True) 
 
+#OPTIONAL - Filter for properties with all 91 months of data available (if purchase date is later than 2011-10-31, then skip this step)
+rental_data = rental_data[(rental_data['rent_count'] == 92) & (rental_data['value_count'] == 92)]
+
 #Calculate rental income
 VACANT_MOS = 1 #Assumed months of vacancy (1 month is standard) 
 rental_data.loc[:, 'gross_rent'] = rental_data['Neighborhood_Zri_SingleFamilyResidenceRental'] * ((12 - VACANT_MOS) / 12)
@@ -61,7 +64,7 @@ def mort_pmt(df, purchase_date_eom):
             mort_df_list.append(df_region)
 
 #Concatenate amortisation dfs and merge with rental df
-mort_pmt(rental_data, '2014-01-31')
+mort_pmt(rental_data, '2011-10-31')
 mort_data = pd.concat(mort_df_list)
 rental_data = pd.merge(rental_data, mort_data, on=['RegionID','date'], how='inner')
 
@@ -91,12 +94,10 @@ rental_data.loc[:, 'capgl_tax'] = rental_data['cap_gain'] * CG_TAX_RATE #Can onl
 rental_data.loc[:, 'after_tax_proceeds'] = rental_data['gross_sale_proceeds'] - rental_data['mort_balance'] - rental_data['capgl_tax'] 
 rental_data.loc[:, 'cfs_plus_sale'] = rental_data['after_tax_proceeds'] + rental_data['net_cf'] 
 
-rental_data = rental_data.reset_index()
-rental_data = rental_data.set_index('RegionName')
-rental_view = rental_data.loc[['Southeast Como']].reset_index()
+#rental_data.to_csv("C:/datascience/springboard/projects/Rental Property ROI/rental property project/Rental Data CF.csv")
 
-region_list = rental_data['RegionID'].unique().tolist() 
 #Calculate IRR. Input dataframe and month of expected sale of property 
+region_list = rental_data['RegionID'].unique().tolist() 
 region_dfs = []
 
 def irr_calc(df, sale_month):
@@ -112,7 +113,7 @@ def irr_calc(df, sale_month):
             cf_list = [initial_inv]
         #Create running list of cfs to input into np.irr function
         for index, row in df_new.iterrows():
-            if index < sale_month-1:
+            if index < sale_month-1 or sale_month == 0:
                 cf_list.append(row['net_cf'])
                 df_new.loc[index, 'cf_irr'] = np.irr(cf_list)
             else: 
@@ -124,8 +125,11 @@ rental_data_new = pd.concat(region_dfs)
           
 #As described in observation one above. Let's begin by comparing each state to see if any signifcant differences occur amongst
 #price-to-rent ratios. Additionally, removing all properties with price-to-rent ratios above 14 (lower is better).
-rental_subset = rental_data[(rental_data['Neighborhood_PriceToRentRatio_AllHomes'] <= 1000) & 
-                            (rental_data['State'] == 'MI')].sort_values('date')
+rental_data_subset = rental_data.set_index('State')
+rental_data_subset = rental_data_subset.loc[['CA', 'CO', 'DC', 'FL', 'GA', 'MN', 'MS', 'TN']]
+rental_data_subset = rental_data_subset.groupby('RegionID').filter(lambda x: x['net_cf'].mean() >= 100)
+rental_data_subset = rental_data_subset.groupby('RegionID').filter(lambda x: x['Neighborhood_Zhvi_SingleFamilyResidence'].tail(1) <= 300000)
+rental_data.loc[:, 'value_count'] = rental_data.groupby('RegionID')['net_cf'].transform('count') 
 
 #Populate list of differences between statistics for all possible combinations (mean, std)
 #Create empty list for each combination metric
@@ -138,12 +142,12 @@ def feature_comp(df, feature_col):
     
     #Get rollup statistics for desired feature (mean, std, samp_var, count
     df_agg = df.groupby(feature_col)['net_cf'].agg(['mean', 'std','count']).reset_index()
-    df_agg['samp_var'] = df_agg['std'] **2 / df_agg['count']
+    df_agg['samp_var'] = df_agg['std'] **2 / 92 #df_agg['count']
     
     #Iterate through all combinations of given feature calculating differences for mean, std 
     for idx, col in enumerate(df_agg.columns): 
         for a, b in itertools.combinations(df_agg[col], 2):
-            if col == feature_col:
+            if col == 'RegionName':
                 feature_combo.append((a, b))
             elif col == str('mean'):
                 mu_diff = a - b 
@@ -153,8 +157,9 @@ def feature_comp(df, feature_col):
                 std_diff.append(sigma_diff)
             else:
                 continue
+    return df_agg
 #Input desired df and feature_col
-feature_comp(rental_subset, 'RegionID')
+region_stats = feature_comp(rental_data_subset, 'RegionID')
                 
 #Form new df for each combination, then calculate z_score, p_value, and determine is Ho can be rejected.
 feature_df = pd.DataFrame({'feature_combo':feature_combo, 'mean_diff':mean_diff, 'std_diff':std_diff})  
@@ -163,8 +168,8 @@ feature_df.loc[:, 'p_value'] = feature_df['z_score'].apply(lambda x: round(stats
 feature_df.loc[:, 'reject_null'] = feature_df['p_value'].apply(lambda x: 'Yes' if x < 0.01 else 'No') #Significance @ 1%
 
 #Print summary df where null hypothesis was rejected
-print(df_agg)
 reject_null_df = feature_df[feature_df['reject_null'] == 'Yes']
 print('Percent significant of total combinations: %.3f' % (len(reject_null_df) / len(mean_diff)))
 print(reject_null_df[['feature_combo','z_score','p_value','reject_null']].sort_values('z_score'))
 
+region_stats.to_csv("C:/datascience/springboard/projects/Rental Property ROI/rental property project/Region Summary Stats.csv")

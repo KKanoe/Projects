@@ -8,7 +8,7 @@ import datetime
 from datetime import date
 
 #Load rental data
-rental_data = pd.read_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data Update.csv', parse_dates=['date'], infer_datetime_format=True) 
+rental_data = pd.read_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data CF.csv', parse_dates=['date'], infer_datetime_format=True) 
 
 #OPTIONAL - Filter for properties with all 91 months of data available (if purchase date is later than 2011-10-31, then skip this step)
 rental_data = rental_data[(rental_data['rent_count'] == 92) & (rental_data['value_count'] == 92)]
@@ -100,7 +100,7 @@ rental_data.loc[:, 'cfs_plus_sale'] = rental_data['after_tax_proceeds'] + rental
 region_list = rental_data['RegionID'].unique().tolist() 
 region_dfs = []
 
-def irr_calc(df, sale_month):
+def irr_calc(df, sale_month): #Put 0 as sale_month to assume no sale
     #Iterate through each region 
     for i in region_list:
         df_new = df[df['RegionID'] == i].reset_index()
@@ -109,7 +109,6 @@ def irr_calc(df, sale_month):
             break
         else:        
             initial_inv = df_new['Neighborhood_Zhvi_SingleFamilyResidence'].iloc[0] * -DOWN_PMT
-            sale_cf = df_new['cfs_plus_sale'].iloc[sale_month-1]
             cf_list = [initial_inv]
         #Create running list of cfs to input into np.irr function
         for index, row in df_new.iterrows():
@@ -118,11 +117,34 @@ def irr_calc(df, sale_month):
                 df_new.loc[index, 'cf_irr'] = np.irr(cf_list)
             else: 
                 cf_list.append(row['cfs_plus_sale'])
-                df_new.loc[index, 'cf_irr'] = np.irr(cf_list)   
+                df_new.loc[index, 'cf_irr'] = np.irr(cf_list)
         region_dfs.append(df_new)
 
 rental_data_new = pd.concat(region_dfs)
-          
+
+def irr_calc(df, sale_month): #Put 0 as sale_month to assume no sale
+    #Iterate through each region 
+    for i in region_list:
+        df_new = df[df['RegionID'] == i].reset_index()
+        if sale_month > len(df_new):
+            print('Not enough data!')
+            break
+        else:        
+            initial_inv = df_new['Neighborhood_Zhvi_SingleFamilyResidence'].iloc[0] * -DOWN_PMT
+            cf_list = [initial_inv]
+        #Create running list of cfs to input into np.irr function
+        for index, row in df_new.iterrows():
+            if index < sale_month-1 or sale_month == 0:
+                cf_list.append(row['net_cf'])
+                df_new.loc[index, 'cf_irr'] = np.irr(cf_list)
+            else: 
+                cf_list.append(row['cfs_plus_sale'])
+                df_new.loc[index, 'cf_irr'] = np.irr(cf_list)
+                #subsets df_new and breaks current loop given sale_month indicated (subset needed due to creation of column cf_irr with original df rows)
+                df_new = df_new[0:sale_month]
+                break
+        region_dfs.append(df_new)
+     
 #As described in observation one above. Let's begin by comparing each state to see if any signifcant differences occur amongst
 #price-to-rent ratios. Additionally, removing all properties with price-to-rent ratios above 14 (lower is better).
 rental_data_subset = rental_data.set_index('State')
@@ -142,7 +164,7 @@ def feature_comp(df, feature_col):
     
     #Get rollup statistics for desired feature (mean, std, samp_var, count
     df_agg = df.groupby(feature_col)['net_cf'].agg(['mean', 'std','count']).reset_index()
-    df_agg['samp_var'] = df_agg['std'] **2 / 92 #df_agg['count']
+    df_agg['samp_var'] = df_agg['std'] **2 / df_agg['count']
     
     #Iterate through all combinations of given feature calculating differences for mean, std 
     for idx, col in enumerate(df_agg.columns): 
@@ -159,7 +181,7 @@ def feature_comp(df, feature_col):
                 continue
     return df_agg
 #Input desired df and feature_col
-region_stats = feature_comp(rental_data_subset, 'RegionID')
+region_stats = feature_comp(rental_data_subset, 'RegionName')
                 
 #Form new df for each combination, then calculate z_score, p_value, and determine is Ho can be rejected.
 feature_df = pd.DataFrame({'feature_combo':feature_combo, 'mean_diff':mean_diff, 'std_diff':std_diff})  

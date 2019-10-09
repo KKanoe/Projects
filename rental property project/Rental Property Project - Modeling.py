@@ -8,7 +8,7 @@ import datetime
 from datetime import date
 
 #Load rental data
-rental_data = pd.read_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data CF.csv', parse_dates=['date'], infer_datetime_format=True) 
+rental_data = pd.read_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data Original.csv', parse_dates=['date'], infer_datetime_format=True) 
 
 #OPTIONAL - Filter for properties with all 91 months of data available (if purchase date is later than 2011-10-31, then skip this step)
 rental_data = rental_data[(rental_data['rent_count'] == 92) & (rental_data['value_count'] == 92)]
@@ -24,7 +24,8 @@ date_list = rental_data['date'].map(pd.Timestamp.date).unique().tolist()#Use a m
 #Scalar values
 YEARS = 30 #Mortgage length (years). Only have 30yr mortgage data right now
 DOWN_PMT = 0.20 #Initial amount down on purchase (percent)
-
+spread_3015y = 0.50 #Typical = 0.50 - 0.75, min = 0.31, max = 0.88 (not incorporated yet)
+buyer_fee = .06 #Percent of purchase price (not incorporated yet)
 #Empyt list stores amortisation dfs for each RegionID
 mort_df_list = [] 
 
@@ -64,7 +65,7 @@ def mort_pmt(df, purchase_date_eom):
             mort_df_list.append(df_region)
 
 #Concatenate amortisation dfs and merge with rental df
-mort_pmt(rental_data, '2011-10-31')
+mort_pmt(rental_data, '2019-05-31')
 mort_data = pd.concat(mort_df_list)
 rental_data = pd.merge(rental_data, mort_data, on=['RegionID','date'], how='inner')
 
@@ -83,7 +84,7 @@ rental_data.loc[:, 'net_cf'] = rental_data['gross_rent'] + rental_data['int_pmt'
 #After-tax proceeds (from sale at any given month)
 CG_TAX_RATE = 0.25
 DEP_RECAP_RATE = 0.25
-SALES_COMM = 0.05 
+SALES_COMM = 0.06
 
 #include improvements somewhere?
 rental_data.loc[:, 'gross_sale_proceeds'] = (rental_data['Neighborhood_Zhvi_SingleFamilyResidence'] * (1-SALES_COMM))
@@ -195,3 +196,6 @@ print('Percent significant of total combinations: %.3f' % (len(reject_null_df) /
 print(reject_null_df[['feature_combo','z_score','p_value','reject_null']].sort_values('z_score'))
 
 region_stats.to_csv("C:/datascience/springboard/projects/Rental Property ROI/rental property project/Region Summary Stats.csv")
+
+
+

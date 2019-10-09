@@ -145,12 +145,79 @@ for i in states:
 adj_ins_data = pd.concat(ins_mon_adj)
 rental_data = pd.merge(rental_data, adj_ins_data, on=['RegionID','date'], how='inner')
 
+#Calculate monthly change in value (rent and median home values)
+rental_data = rental_data.sort_values(['RegionID','date'])
+rental_data['zhvi_sfh_pct_chg'] = rental_data.groupby('RegionID')['Neighborhood_Zhvi_SingleFamilyResidence'].transform(lambda x: x.pct_change())
+rental_data['zri_sfh_pct_chg'] = rental_data.groupby('RegionID')['Neighborhood_Zri_SingleFamilyResidenceRental'].transform(lambda x: x.pct_change())
+rental_data['zhvi_sfh_pchg'] = rental_data.groupby('RegionID')['Neighborhood_Zhvi_SingleFamilyResidence'].transform(lambda x: x.diff())
+rental_data['zri_sfh_pchg'] = rental_data.groupby('RegionID')['Neighborhood_Zri_SingleFamilyResidenceRental'].transform(lambda x: x.diff())
+
+#Calculate New Price to Rent Ratio for Single Family Homes
+rental_data['price_to_rent_sfh'] = rental_data['Neighborhood_Zhvi_SingleFamilyResidence'] / rental_data['Neighborhood_Zri_SingleFamilyResidenceRental']
+
 #Send files to csv for easy import later
-rental_data.to_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data.csv', index=False) 
+rental_data.to_csv('C:/datascience/springboard/projects/Rental Property ROI/data/Rental Data Original.csv', index=False) 
+
+#Load Latest Data and Connect new features for clustering portion. This is to be used for ad-hoc data additions
+file = 'C:/datascience/springboard/projects/Rental Property ROI/data/Listings Sales/Sale_Counts_Neighborhood.csv'
+
+df = pd.read_csv(file, encoding='windows-1252')
+df_name = re.sub(r'.csv',"", ntpath.basename(file))
+#Re-orient the dataframe from wide format (dates as columns) to long format (dates as rows)
+df.set_index(['RegionID', 'RegionName', 'StateName', 'SizeRank'], inplace=True)
+df = df.stack(level=0).reset_index().rename(columns={'level_4':'date', 0:df_name})
+#Subset to latest date
+df = df[df['date'] == '2018-12']
+#Format selected columns
+df.loc[:, 'date'] = pd.to_datetime(df['date'], format = '%Y-%m')  
+
+df.loc[:, 'Metro'] = df['Metro'].str.replace(r'/|-', "_").str.replace(r'.',"")
+file_names.append(df_name) #Storing filenames in list provides name reference for file_container
+file_container.append(df)
+del(df, df_name, file)
 
 
+#Place filenames in list
+filenames=glob.glob('C:/datascience/springboard/projects/Rental Property ROI/data/csv/Additional Files/*.csv')
 
+file_container = []
+file_names = []
 
+for file in filenames:
+    #Read files and extract filename for reference
+    df_name = re.sub(r'.csv',"", ntpath.basename(file))
+    df = pd.read_csv(file)
+    #Re-orient the dataframe from wide format (dates as columns) to long format (dates as rows)
+    df.set_index(['RegionID','RegionName','RegionType','StateName','SizeRank','MSA','MSARegionID'], inplace=True)
+    df = df.stack(level=0).reset_index().rename(columns={'level_7':'date', 0:df_name})
+    #Format selected columns
+    df.loc[:, 'date'] = pd.to_datetime(df['date'], format = '%Y-%m')  
+    file_names.append(df_name) #Storing filenames in list provides name reference for file_container
+    file_container.append(df)
+    del(df, df_name, file)
 
+#Compress df to preserve memory and convert column types for merging
+for df in file_container:
+    float_conv = df.select_dtypes(include=['float']).apply(pd.to_numeric, downcast='float')
+    int_conv = df.select_dtypes(include=['int64']).apply(pd.to_numeric, downcast='unsigned')
+    object_conv = df.select_dtypes(include=['object'])
 
+    #Determine if unique values in object column are less than 50% of total values. If less, change to category, otherwise leave as object
+    for col in object_conv.columns:
+        num_unique_values = len(object_conv[col].unique())
+        num_total_values = len(object_conv[col])
+        if num_unique_values / num_total_values < 0.5:
+            object_conv.loc[:, col] = object_conv[col].astype('category')
+        else:
+            object_conv.loc[:, col] = object_conv[col]
+    #Overlay converted columns dtypes on original df. This acheived as estimated 90% reduction in memory usage
+    df[float_conv.columns] = float_conv
+    df[int_conv.columns] = int_conv
+    df[object_conv.columns] = object_conv
+    
+#Combine dfs into one df for comparison
+bs_idx_data = reduce(lambda left, right: pd.merge(left, right, on=['RegionID','RegionName','RegionType','StateName','SizeRank','MSA','MSARegionID','date'], how='outer'), file_container)
 
+del(col, df, file_container, file_names, filenames, float_conv, int_conv, num_total_values, num_unique_values, object_conv)
+
+bs_idx_data = bs_idx_data[bs_idx_data['date'] == '2019-05-01']

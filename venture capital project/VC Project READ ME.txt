@@ -1,0 +1,57 @@
+Project Name: Predicting Start-Up Acquisitions Using Venture Capital Data
+
+Project Status: Completed.
+
+Project Intro/Objective
+The purpose of this project is to predict acquisitions using venture capital data using Crunchbase point-in-time data as of year-end 2013. 
+Provided data includes areas of investor, rounds, company, and acquisitions data. Primary consumers would be Venture Capital firms, Start-Up Founders,
+and those that have a keen interest in private markets.
+
+Methods Used
+* Data Wrangling
+* Data Visualization
+* Inferential Statistics
+* Machine Learning
+* Predictive Modeling
+
+Technologies 
+* Python
+* R
+* Jupyter Notebook
+
+Project Description
+
+I analyzed over 19,000 companies across 58 features (four selected) using a RandomForestClassifier. Multi-class labels included Operating, Acquired, IPO,
+and Closed. Achieved 87% accuracy (F1 = 84%) using a 60/40 train/test split. Model achieved accuracy on binary basis (acquired/operating), but failed
+to extend to a multi-class use.
+
+Further Needs of this project
+
+* Updated data (in particular, more acquisition instances)
+* More granular investor level data
+* Re-optimization of investor scores to boost feature importantance (hunch)  
+
+Featured Notebooks/Analysis/Deliverables
+* Venture Capital Data - Wrangling Update.py
+
+Wrangles four dataframes into combined Company level dataframe. Takes rounds and investor dataframes from long format to wide format. Also calculates 
+investor scores for each company by round (14 max rounds).
+
+* Venture Capital Data - EDA.ipynb
+
+Granular and summary views of data in each of the four dataframes and combined dataframe. 
+
+* Venture Capital ML Walkthrough.ipynb
+
+Walkthrough of RandomForestClassifier implementation from beginning to end. 
+
+* Venture Capital ML Update.py
+
+More granular view of code used to implement RandomForestClassifier. 
+
+* Venture Capital - Predicting Start-Up Acquisitions Using Venture Capital Data.pdf
+
+Full write up of project.
+
+Contact
+* Kris Knudtson, CFA (KKanoe35@gmail.com)

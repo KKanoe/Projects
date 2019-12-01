@@ -4,12 +4,14 @@ import re
 import ntpath
 from functools import reduce
 import datetime as dt
+import numpy as np
 
 #Place filenames in list
 filenames=glob.glob('C:/datascience/springboard/projects/Venture Capital/data/*.csv')
 
 #Load files and place each in list
 df_container = []
+df_container_trans = []
 df_names = []
 flat_dfs = []
 
@@ -73,7 +75,7 @@ for file in filenames:
         
         #Create unique name for each unique funding round (pivot table use)
         df = df.sort_values(['company_name','funded_at'])
-        df.loc[:, 'counter'] = df.groupby('company_name')['funded_month'].transform(lambda x: pd.CategoricalIndex(x).codes)+1
+        df.loc[:, 'counter'] = df.groupby('company_name')['funded_at'].transform(lambda x: pd.CategoricalIndex(x).codes)+1
         df['unique_investors'] = 'invscore_' + df['counter'].astype(str)
         df['unique_investors2'] = 'invct_' + df['counter'].astype(str)
         
@@ -125,6 +127,9 @@ for file in filenames:
         df['rd_day_diff'] = df.groupby('company_name')['funded_at'].transform(lambda x: x.diff())
         df['rd_day_diff'] = df['rd_day_diff'].dt.days
         
+        #Append transformed df to container as well
+        df_container_trans.append(df)
+        
         #Create pivot tables
         rds_piv = pd.pivot_table(df, values='raised_amount_usd', index='company_name', columns='unique_rds_amt').reset_index()
         rds_piv2 = df.pivot(values='funded_at', index='unique_name', columns='unique_rds_dt').reset_index()
@@ -152,7 +157,7 @@ for file in filenames:
         
         #Append flat df to empty list
         flat_dfs.append(df)
-       
+        
     else:
         
         continue
@@ -197,15 +202,45 @@ comp_df[object_conv.columns] = object_conv
 del(col, df, df_name, file, flat_df, flat_dfs, float_conv, int_conv, inv_piv, num_total_values, num_unique_values, object_conv)
    
 #Calculate time features
-comp_df.loc[:, 'found_to_fund_days'] = comp_df['first_funding_at'] - comp_df['founded_at']
-comp_df.loc[:, 'first_to_last_fund_days'] = comp_df['last_funding_at'] - comp_df['first_funding_at'] 
-comp_df.loc[:, 'last_to_acq_days'] = comp_df['acquired_at'] - comp_df['last_funding_at']
-comp_df.loc[:, 'found_to_acq_days'] = comp_df['acquired_at'] - comp_df['founded_at']
-comp_df.loc[:, 'first_fund_to_acq_days'] = comp_df['acquired_at'] - comp_df['first_funding_at']
+#Calculate time differences
+comp_df.loc[:, 'first_to_last_fund_days'] = (comp_df['last_funding_at'] - comp_df['first_funding_at']).dt.days 
+comp_df.loc[:, 'last_to_acq_days'] = (comp_df['acquired_at'] - comp_df['last_funding_at']).dt.days
+comp_df.loc[:, 'found_to_acq_days'] = (comp_df['acquired_at'] - comp_df['founded_at']).dt.days
+comp_df.loc[:, 'first_fund_to_acq_days'] = (comp_df['acquired_at'] - comp_df['first_funding_at']).dt.days
+comp_df.loc[:, 'found_to_fund_days'] = (comp_df['first_funding_at'] - comp_df['founded_at']).dt.days
+
+#Deal with important column nans
+#Round 1 day differences
+rd1_dtdiff_median = comp_df['found_to_fund_days'].median()  
+comp_df.loc[:, 'funding_rounds'] = comp_df['funding_rounds'].fillna(0)
+comp_df.loc[:, 'found_to_fund_days_adj'] = np.where((comp_df['founded_at'].isnull()) | (comp_df['first_funding_at'].isnull()), 
+                                                     rd1_dtdiff_median, comp_df['found_to_fund_days'])
+
+comp_df.loc[:, 'found_to_fund_days_adj'] = np.where(comp_df['funding_rounds'] == 0, 0, comp_df['found_to_fund_days_adj'])
+
+#Format day diff columns
+#All nan's due to date differences only occuring at second round, drop in founded to funding days as replacement (should drop negative days)
+comp_df['rddt_diff_1'] = comp_df['found_to_fund_days_adj']
+comp_df = comp_df.drop(columns='found_to_fund_days') 
+comp_df = comp_df.rename(columns={'found_to_fund_days_adj':'found_to_fund_days'}) 
+
+#Change negative values where funding date preceded founding date
+comp_df['rddt_diff_1'] = np.where(comp_df['rddt_diff_1'] < 0, 0, comp_df['rddt_diff_1'])
+
+#Funding Total USD
+#Drop Total Funding Column
+comp_df = comp_df.drop(columns='funding_total_usd')
+
+#Sum total funding from rd_amt columns. This ensures agreement.
+start_col_amt = comp_df.columns.get_loc('rdamt_1')
+end_col_amt =  comp_df.columns.get_loc('rdamt_14') + 1
+funding_total_usd = comp_df.iloc[:, start_col_amt:end_col_amt].sum(axis=1)
+comp_df.insert(end_col_amt, 'funding_total_usd', funding_total_usd)
+
+#Drop records where funding rounds exceed 1, but no funding total known
+comp_df.loc[:, 'funding_total_usd'] = np.where((comp_df['funding_rounds'] >= 1) & (comp_df['funding_total_usd'] == 0), np.nan, comp_df['funding_total_usd'])
+comp_df = comp_df.dropna(subset=['funding_total_usd'])
 
 #Codify feature categorical columns 
 comp_df['category_code'] = comp_df['company_category_code'].cat.codes
 comp_df['region_code'] = comp_df['company_region'].cat.codes
-
-comp_df.to_csv('C:/datascience/springboard/projects/Venture Capital/data/Exported Data/Company summary df.csv', encoding="ISO-8859-1")   
-      

@@ -3,34 +3,19 @@ import matplotlib.pyplot as plt
 import seaborn as sns; sns.set(color_codes=True)
 import numpy as np
 
-
 #Drop column not perceived to be features
 drop_cols = ['company_permalink','company_category_code','company_country_code','company_state_code','company_city','company_region',
              'founded_month','founded_quarter','first_funding_at','first_funding_at','last_funding_at','last_milestone_at',
              'acquirer_permalink','acquirer_name','acquirer_category_code','acquirer_country_code','acquirer_state_code','acquirer_region',
              'acquirer_city','acquired_at','acquired_month','acquired_quarter','acquired_year','price_currency_code',
              'price_amount','founded_year','founded_at','unique_name','first_to_last_fund_days','last_to_acq_days',
-             'found_to_acq_days','first_fund_to_acq_days','funding_total_usd','rddt_1','rddt_2','rddt_3','rddt_4','rddt_5',
-             'rddt_6','rddt_7','rddt_8','rddt_9','rddt_10','rddt_11','rddt_12','rddt_13','rddt_14']
+             'found_to_acq_days','first_fund_to_acq_days','rddt_1','rddt_2','rddt_3','rddt_4','rddt_5',
+             'rddt_6','rddt_7','rddt_8','rddt_9','rddt_10','rddt_11','rddt_12','rddt_13','rddt_14','found_to_fund_days']
 
 ml_df = comp_df.drop(columns=drop_cols).set_index('company_name')
 
-#Format day diff columns
-#All nan's due to date differences only occuring at second round, drop in founded to funding days as replacement (should drop negative days)
-ml_df['rddt_diff_1'] = ml_df['found_to_fund_days'].dt.days 
-ml_df = ml_df.drop(columns='found_to_fund_days') 
-
-#Change negative values where funding date preceded founding date
-ml_df['rddt_diff_1'] = np.where(ml_df['rddt_diff_1'] < 0, 0, ml_df['rddt_diff_1'])
-
 #Replace Nan's with zeroes (skipping status column)
 ml_df.iloc[:, 1:] = ml_df.iloc[:, 1:].fillna(0)
-
-#Calculate total funding from rounds (this ensures our accounting balances with the rds data instead of using provided funding total)
-start_col_amt = ml_df.columns.get_loc('rdamt_1')
-end_col_amt =  ml_df.columns.get_loc('rdamt_14') + 1
-funding_total_usd = ml_df.iloc[:, start_col_amt:end_col_amt].sum(axis=1)
-ml_df.insert(end_col_amt, 'funding_total_usd', funding_total_usd)
 
 #Format df to various versions (i.e. filtering based on criteria)
 #Fix negative category codes where -1 (missing category originally) 
@@ -62,7 +47,7 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 model_exTree = ExtraTreesClassifier()
 model_exTree.fit(X_train, y_train)
 
-model_RandTree = RandomForestClassifier()
+model_RandTree = RandomForestClassifier(random_state=0, n_jobs=-1)
 model_RandTree.fit(X_train, y_train)
 
 #Visualization and ouput
@@ -78,14 +63,22 @@ plt.title('Feature Importance - ExtraTrees Classifier')
 plt.tight_layout()
 plt.show()
 
+#Visualize feature importance
 features_RandTree = {}
 
 for feature, importance in zip(ml_df.columns, model_RandTree.feature_importances_):
     features_RandTree[feature] = importance
 
 importances_RandTree = pd.DataFrame.from_dict(features_RandTree, orient='index').rename(columns={0: 'Gini-Importance'})
-importances_RandTree.sort_values(by='Gini-Importance', ascending=False).plot(kind='bar', rot=90)
-plt.title('Feature Importance - Random Forest Classifier')
+importances_RandTree = importances_RandTree.sort_values(by='Gini-Importance', ascending=True)
+importances_RandTree  = importances_RandTree[importances_RandTree['Gini-Importance'] >= 0.01]
+
+fig, ax = plt.subplots(figsize=(15,12))
+plt.barh(importances_RandTree.index, importances_RandTree['Gini-Importance'])
+plt.title('Feature Importance above 1% - Random Forest Classifier', fontsize=16)
+ax.set_ylabel('Features', fontsize=14)
+ax.set_yticklabels(importances_RandTree.index, fontsize=12)
+ax.set_xlabel('Gini-Importance', fontsize=14)
 plt.tight_layout()
 plt.show()
 
@@ -249,6 +242,10 @@ import pydotplus
 from IPython.display import display, Image
 from sklearn.tree import export_graphviz
 
+base_model = RandomForestClassifier(n_estimators=10, max_depth=2, random_state=4)
+base_model.fit(X_important_train, y_train)
+base_model_pred = base_model.predict(X_important_test)
+
 def save_decision_trees_as_png(clf, iteration, feature_name, target_name):
     file_name = "vc_" + str(iteration) + ".png"
     dot_data = export_graphviz(
@@ -269,8 +266,8 @@ def save_decision_trees_as_png(clf, iteration, feature_name, target_name):
 feature_names = selected_feat
 target_names = np.unique(tgt_enc.inverse_transform(tgt_encoded))
     
-for i in range(len(tuned_model.estimators_)):
-    save_decision_trees_as_png(tuned_model.estimators_[i], i, feature_names, target_names)
+for i in range(len(base_model.estimators_)):
+    save_decision_trees_as_png(base_model.estimators_[i], i, feature_names, target_names)
     
 images = [ PIL.Image.open(f) for f in glob('./*.png') ]
 
